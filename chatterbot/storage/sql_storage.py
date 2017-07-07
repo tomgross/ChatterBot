@@ -8,16 +8,33 @@ from chatterbot.conversation import Statement
 Base = None
 
 try:
+    from sqlalchemy import Table, Column, Integer, String, PickleType, ForeignKey
     from sqlalchemy.ext.declarative import declarative_base
+    from sqlalchemy.orm import relationship
 
     Base = declarative_base()
+
+    tag_association_table = Table(
+        'tag_association',
+        Base.metadata,
+        Column('tag_id', Integer, ForeignKey('tag.id')),
+        Column('statement_id', Integer, ForeignKey('StatementTable.id'))
+    )
+
+    class Tag(Base):
+        """
+        A tag that describes a statement.
+        """
+
+        __tablename__ = 'tag'
+
+        id = Column(Integer, primary_key=True)
+        name = Column(String)
 
     class StatementTable(Base):
         """
         StatementTable, placeholder for a sentence or phrase.
         """
-        from sqlalchemy import Column, Integer, String, PickleType
-        from sqlalchemy.orm import relationship
 
         __tablename__ = 'StatementTable'
 
@@ -34,6 +51,11 @@ try:
 
         id = Column(Integer)
         text = Column(String, primary_key=True)
+        tags = relationship(
+            'Tag',
+            secondary=lambda: tag_association_table,
+            backref='statements'
+        )
         extra_data = Column(PickleType)
 
         in_response_to = relationship(
@@ -50,9 +72,6 @@ try:
         """
         ResponseTable, contains responses related to a givem statment.
         """
-
-        from sqlalchemy import Column, Integer, String, ForeignKey
-        from sqlalchemy.orm import relationship
 
         __tablename__ = 'ResponseTable'
 
