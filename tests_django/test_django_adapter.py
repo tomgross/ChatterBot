@@ -133,7 +133,7 @@ class DjangoStorageAdapterTestCase(DjangoAdapterTestCase):
 
         response = self.adapter.find(statement.text)
 
-        self.assertEqual(response.responses.count(), 1)
+        self.assertEqual(response.responses.count(), 2)
         self.assertEqual(response.responses.first().occurrence, 2)
 
     def test_remove(self):
@@ -340,12 +340,12 @@ class DjangoOrderingTestCase(DjangoStorageAdapterTestCase):
         self.assertEqual(results[0], statement_a)
         self.assertEqual(results[1], statement_b)
 
-    def test_order_by_created_at(self):
+    def test_reverse_order_by_text(self):
         statement_a = StatementModel.objects.create(text='A is the first letter of the alphabet.')
         statement_b = StatementModel.objects.create(text='B is the second letter of the alphabet.')
 
-        results = self.adapter.filter(order_by='created_at')
+        results = self.adapter.filter(order_by='-text')
 
         self.assertEqual(len(results), 2)
-        self.assertEqual(results[0], statement_a)
-        self.assertEqual(results[1], statement_b)
+        self.assertEqual(results[1], statement_a)
+        self.assertEqual(results[0], statement_b)

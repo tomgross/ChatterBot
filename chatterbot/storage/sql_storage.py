@@ -1,72 +1,10 @@
 import random
-
 from chatterbot.storage import StorageAdapter
-from chatterbot.conversation import Response
-from chatterbot.conversation import Statement
-
-try:
-    from chatterbot.ext.sqlalchemy_app.models import Base
-    from sqlalchemy.orm import relationship
-    from sqlalchemy.sql import func
-    from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, PickleType
-
-    class StatementTable(Base):
-        """
-        StatementTable, placeholder for a sentence or phrase.
-        """
-
-        __tablename__ = 'StatementTable'
-
-        def get_statement(self):
-            statement = Statement(self.text, extra_data=self.extra_data)
-            for response in self.in_response_to:
-                statement.add_response(response.get_response())
-            return statement
-
-        text = Column(String, unique=True)
-
-        extra_data = Column(PickleType)
-
-        in_response_to = relationship(
-            'ResponseTable',
-            back_populates='statement_table'
-        )
-
-    class ResponseTable(Base):
-        """
-        ResponseTable, contains responses related to a givem statment.
-        """
-
-        __tablename__ = 'ResponseTable'
-
-        text = Column(String)
-
-        created_at = Column(
-            DateTime(timezone=True),
-            server_default=func.now()
-        )
-
-        occurrence = Column(Integer, default=1)
-
-        statement_text = Column(String, ForeignKey('StatementTable.text'))
-
-        statement_table = relationship(
-            'StatementTable',
-            back_populates='in_response_to',
-            cascade='all',
-            uselist=False
-        )
-
-        def get_response(self):
-            occ = {'occurrence': self.occurrence}
-            return Response(text=self.text, **occ)
-
-except ImportError:
-    pass
 
 
 def get_response_table(response):
-    return ResponseTable(text=response.text, occurrence=response.occurrence)
+    from chatterbot.ext.sqlalchemy_app.models import Response
+    return Response(text=response.text, occurrence=response.occurrence)
 
 
 class SQLStorageAdapter(StorageAdapter):
@@ -77,7 +15,7 @@ class SQLStorageAdapter(StorageAdapter):
     Notes:
         Tables may change (and will), so, save your training data. There is no data migration (yet).
         Performance test not done yet.
-        Tests using others databases not finished.
+        Tests using other databases not finished.
 
     All parameters are optional, by default a sqlite database is used.
 
@@ -122,7 +60,7 @@ class SQLStorageAdapter(StorageAdapter):
             "read_only", False
         )
 
-        if not self.engine.dialect.has_table(self.engine, 'StatementTable'):
+        if not self.engine.dialect.has_table(self.engine, 'Statement'):
             self.create()
 
         self.Session = sessionmaker(bind=self.engine, expire_on_commit=True)
@@ -134,18 +72,22 @@ class SQLStorageAdapter(StorageAdapter):
         """
         Return the number of entries in the database.
         """
+        from chatterbot.ext.sqlalchemy_app.models import Statement
+
         session = self.Session()
-        statement_count = session.query(StatementTable).count()
+        statement_count = session.query(Statement).count()
         session.close()
         return statement_count
 
     def __statement_filter(self, session, **kwargs):
         """
-        Apply filter operation on StatementTable
+        Apply filter operation on Statement
 
         rtype: query
         """
-        _query = session.query(StatementTable)
+        from chatterbot.ext.sqlalchemy_app.models import Statement
+
+        _query = session.query(Statement)
         return _query.filter_by(**kwargs)
 
     def find(self, statement_text):
@@ -175,7 +117,7 @@ class SQLStorageAdapter(StorageAdapter):
 
         session.delete(record)
 
-        self._session_finish(session, statement_text)
+        self._session_finish(session)
 
     def filter(self, **kwargs):
         """
@@ -185,6 +127,8 @@ class SQLStorageAdapter(StorageAdapter):
         all listed attributes and in which all values
         match for all listed attributes will be returned.
         """
+        from chatterbot.ext.sqlalchemy_app.models import Statement, Response
+
         session = self.Session()
 
         filter_parameters = kwargs.copy()
@@ -193,32 +137,32 @@ class SQLStorageAdapter(StorageAdapter):
         # _response_query = None
         _query = None
         if len(filter_parameters) == 0:
-            _response_query = session.query(StatementTable)
+            _response_query = session.query(Statement)
             statements.extend(_response_query.all())
         else:
             for i, fp in enumerate(filter_parameters):
                 _filter = filter_parameters[fp]
                 if fp in ['in_response_to', 'in_response_to__contains']:
-                    _response_query = session.query(StatementTable)
+                    _response_query = session.query(Statement)
                     if isinstance(_filter, list):
                         if len(_filter) == 0:
                             _query = _response_query.filter(
-                                StatementTable.in_response_to == None)  # NOQA Here must use == instead of is
+                                Statement.in_response_to == None)  # NOQA Here must use == instead of is
                         else:
                             for f in _filter:
                                 _query = _response_query.filter(
-                                    StatementTable.in_response_to.contains(get_response_table(f)))
+                                    Statement.in_response_to.contains(get_response_table(f)))
                     else:
                         if fp == 'in_response_to__contains':
-                            _query = _response_query.join(ResponseTable).filter(ResponseTable.text == _filter)
+                            _query = _response_query.join(Response).filter(Response.text == _filter)
                         else:
-                            _query = _response_query.filter(StatementTable.in_response_to == None)  # NOQA
+                            _query = _response_query.filter(Statement.in_response_to == None)  # NOQA
                 else:
                     if _query:
-                        _query = _query.filter(ResponseTable.statement_text.like('%' + _filter + '%'))
+                        _query = _query.filter(Response.statement_text.like('%' + _filter + '%'))
                     else:
-                        _response_query = session.query(ResponseTable)
-                        _query = _response_query.filter(ResponseTable.statement_text.like('%' + _filter + '%'))
+                        _response_query = session.query(Response)
+                        _query = _response_query.filter(Response.statement_text.like('%' + _filter + '%'))
 
                 if _query is None:
                     return []
@@ -228,7 +172,7 @@ class SQLStorageAdapter(StorageAdapter):
         results = []
 
         for statement in statements:
-            if isinstance(statement, ResponseTable):
+            if isinstance(statement, Response):
                 if statement and statement.statement_table:
                     results.append(statement.statement_table.get_statement())
             else:
@@ -244,6 +188,8 @@ class SQLStorageAdapter(StorageAdapter):
         Modifies an entry in the database.
         Creates an entry if one does not exist.
         """
+        from chatterbot.ext.sqlalchemy_app.models import Statement, Response
+
         if statement:
             session = self.Session()
             query = self.__statement_filter(session, **{"text": statement.text})
@@ -251,14 +197,14 @@ class SQLStorageAdapter(StorageAdapter):
 
             # Create a new statement entry if one does not already exist
             if not record:
-                record = StatementTable(text=statement.text)
+                record = Statement(text=statement.text)
 
             record.extra_data = dict(statement.extra_data)
 
             if statement.in_response_to:
                 # Get or create the response records as needed
                 for response in statement.in_response_to:
-                    _response = session.query(ResponseTable).filter_by(
+                    _response = session.query(Response).filter_by(
                         text=response.text,
                         statement_text=statement.text
                     ).first()
@@ -267,7 +213,7 @@ class SQLStorageAdapter(StorageAdapter):
                         _response.occurrence += 1
                     else:
                         # Create the record
-                        _response = ResponseTable(
+                        _response = Response(
                             text=response.text,
                             statement_text=statement.text,
                             occurrence=response.occurrence
@@ -279,17 +225,97 @@ class SQLStorageAdapter(StorageAdapter):
 
             self._session_finish(session)
 
+    def create_conversation(self):
+        """
+        Create a new conversation.
+        """
+        from chatterbot.ext.sqlalchemy_app.models import Conversation
+
+        session = self.Session()
+        conversation = Conversation()
+
+        session.add(conversation)
+        session.flush()
+
+        session.refresh(conversation)
+        conversation_id = conversation.id
+
+        session.commit()
+        session.close()
+
+        return conversation_id
+
+    def add_to_converation(self, conversation_id, statement, response):
+        """
+        Add the statement and response to the conversation.
+        """
+        from chatterbot.ext.sqlalchemy_app.models import Conversation, Statement
+
+        session = self.Session()
+        conversation = session.query(Conversation).get(conversation_id)
+
+        statement_query = session.query(Statement).filter_by(
+            text=statement.text
+        ).first()
+        response_query = session.query(Statement).filter_by(
+            text=response.text
+        ).first()
+
+        # Make sure the statements exist
+        if not statement_query:
+            self.update(statement)
+            statement_query = session.query(Statement).filter_by(
+                text=statement.text
+            ).first()
+
+        if not response_query:
+            self.update(response)
+            response_query = session.query(Statement).filter_by(
+                text=response.text
+            ).first()
+
+        conversation.statements.append(statement_query)
+        conversation.statements.append(response_query)
+
+        session.add(conversation)
+        self._session_finish(session)
+
+    def get_latest_response(self, conversation_id):
+        """
+        Returns the latest response in a conversation if it exists.
+        Returns None if a matching conversation cannot be found.
+        """
+        from chatterbot.ext.sqlalchemy_app.models import Statement
+
+        session = self.Session()
+        statement = None
+
+        statement_query = session.query(
+            Statement
+        ).filter(
+            Statement.conversations.any(id=conversation_id)
+        ).order_by(Statement.id).limit(2).first()
+
+        if statement_query:
+            statement = statement_query.get_statement()
+
+        session.close()
+
+        return statement
+
     def get_random(self):
         """
         Returns a random statement from the database
         """
+        from chatterbot.ext.sqlalchemy_app.models import Statement
+
         session = self.Session()
         count = self.count()
         if count < 1:
             raise self.EmptyDatabaseException()
 
         rand = random.randrange(0, count)
-        stmt = session.query(StatementTable)[rand]
+        stmt = session.query(Statement)[rand]
 
         statement = stmt.get_statement()
 
@@ -300,12 +326,14 @@ class SQLStorageAdapter(StorageAdapter):
         """
         Drop the database attached to a given adapter.
         """
+        from chatterbot.ext.sqlalchemy_app.models import Base
         Base.metadata.drop_all(self.engine)
 
     def create(self):
         """
         Populate the database with the tables.
         """
+        from chatterbot.ext.sqlalchemy_app.models import Base
         Base.metadata.create_all(self.engine)
 
     def _session_finish(self, session, statement_text=None):

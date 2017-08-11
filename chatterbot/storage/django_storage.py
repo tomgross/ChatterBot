@@ -98,14 +98,10 @@ class DjangoStorageAdapter(StorageAdapter):
             response_statement.extra_data = getattr(_response_statement, 'extra_data', '')
             response_statement.save()
 
-            response, created = Response.objects.get_or_create(
+            Response.objects.create(
                 statement=response_statement,
                 response=statement
             )
-
-            if not created:
-                response.occurrence += 1
-                response.save()
 
         return statement
 
@@ -137,6 +133,54 @@ class DjangoStorageAdapter(StorageAdapter):
 
         responses.delete()
         statements.delete()
+
+    def get_latest_response(self, conversation_id):
+        """
+        Returns the latest response in a conversation if it exists.
+        Returns None if a matching conversation cannot be found.
+        """
+        from django.apps import apps
+
+        Response = apps.get_model(self.django_app_name, 'Response')
+
+        response = Response.objects.filter(
+            conversations__id=conversation_id
+        ).order_by(
+            'created_at'
+        ).first()
+
+        if not response:
+            return None
+
+        return response.response
+
+    def create_conversation(self):
+        """
+        Create a new conversation.
+        """
+        from django.apps import apps
+        Conversation = apps.get_model(self.django_app_name, 'Conversation')
+        conversation = Conversation.objects.create()
+        return conversation.id
+
+    def add_to_converation(self, conversation_id, statement, response):
+        """
+        Add the statement and response to the conversation.
+        """
+        from django.apps import apps
+
+        Statement = apps.get_model(self.django_app_name, 'Statement')
+        Response = apps.get_model(self.django_app_name, 'Response')
+
+        first_statement = Statement.objects.get(text=statement.text)
+        first_response = Statement.objects.get(text=response.text)
+
+        response = Response.objects.create(
+            statement=first_statement,
+            response=first_response
+        )
+
+        response.conversations.add(conversation_id)
 
     def drop(self):
         """
