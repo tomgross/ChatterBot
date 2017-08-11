@@ -35,7 +35,7 @@ class MultiLogicAdapter(LogicAdapter):
 
         return functions_dict
 
-    def process(self, statement):
+    def process(self, statement, session_id=None):
         """
         Returns the output of a selection of logic adapters
         for a given input statement.
@@ -49,7 +49,11 @@ class MultiLogicAdapter(LogicAdapter):
         for adapter in self.get_adapters():
             if adapter.can_process(statement):
 
-                output = adapter.process(statement)
+                try:
+                    output = adapter.process(statement, session_id)
+                except TypeError:
+                    # let old format without session_id still work
+                    output = adapter.process(statement)
 
                 if type(output) == tuple:
                     warnings.warn(
